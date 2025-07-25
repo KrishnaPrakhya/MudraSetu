@@ -401,7 +401,8 @@ export default function VideoCallPage() {
                       {stream ? (
                         <video
                           ref={(el) => {
-                            if (el) remoteVideoRefs.current[participant.id] = el;
+                            if (el)
+                              remoteVideoRefs.current[participant.id] = el;
                           }}
                           autoPlay
                           playsInline
@@ -425,7 +426,9 @@ export default function VideoCallPage() {
                       <div className="absolute bottom-4 left-4 right-4">
                         <PredictionDisplay
                           predictions={remotePredictions[participant.id] || []}
-                          title={`${participant?.name || "Participant"}'s Signs`}
+                          title={`${
+                            participant?.name || "Participant"
+                          }'s Signs`}
                           variant="remote"
                         />
                       </div>
@@ -449,22 +452,20 @@ export default function VideoCallPage() {
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Call Controls */}
-          <div className="mt-4">
-            <CallControls
-              isVideoEnabled={isVideoEnabled}
-              isAudioEnabled={isAudioEnabled}
-              isRecording={isRecording}
-              onToggleVideo={toggleVideo}
-              onToggleAudio={toggleAudio}
-              onStartRecording={startRecording}
-              onStopRecording={stopRecording}
-              onEndCall={endCall}
-              onSpeakPredictions={speakPredictions}
-              onClearPredictions={clearPredictions}
-            />
+            <div className="">
+              <CallControls
+                isVideoEnabled={isVideoEnabled}
+                isAudioEnabled={isAudioEnabled}
+                isRecording={isRecording}
+                onToggleVideo={toggleVideo}
+                onToggleAudio={toggleAudio}
+                onStartRecording={startRecording}
+                onStopRecording={stopRecording}
+                onEndCall={endCall}
+                onSpeakPredictions={speakPredictions}
+                onClearPredictions={clearPredictions}
+              />
+            </div>
           </div>
         </div>
 
