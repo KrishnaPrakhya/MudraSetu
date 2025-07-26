@@ -23,6 +23,7 @@ export default function PredictPage() {
     stats,
     settings,
     updateSettings,
+    fps,
   } = useSignLanguageRecognition();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -46,20 +47,22 @@ export default function PredictPage() {
     initCamera();
   }, [videoRef]);
 
+  // Use requestAnimationFrame for smoother rendering
+  const animationFrameRef = useRef<number | null>(null);
+  const lastLandmarksRef = useRef(landmarks);
+
+  // Update the ref when landmarks change
+  useEffect(() => {
+    lastLandmarksRef.current = landmarks;
+  }, [landmarks]);
+
+  // Separate rendering loop using requestAnimationFrame
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !video || !landmarks) {
-      if (canvas) {
-        const canvasCtx = canvas.getContext("2d");
-        if (canvasCtx) canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-      }
-      return;
-    }
+    if (!canvas || !video) return;
 
-    const canvasCtx = canvas.getContext("2d");
-    if (!canvasCtx) return;
-
+    // Set canvas size once
     if (
       canvas.width !== video.clientWidth ||
       canvas.height !== video.clientHeight
@@ -68,54 +71,83 @@ export default function PredictPage() {
       canvas.height = video.clientHeight;
     }
 
-    canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-    canvasCtx.scale(-1, 1);
-    canvasCtx.translate(-canvas.width, 0);
+    const canvasCtx = canvas.getContext("2d", {
+      alpha: true,
+      desynchronized: true, // Enable desynchronized mode for lower latency
+    });
+    if (!canvasCtx) return;
 
-    const drawingUtils = new DrawingUtils(canvasCtx);
+    // Rendering function that runs in animation frame
+    const renderFrame = () => {
+      const currentLandmarks = lastLandmarksRef.current;
+      
+      // Clear canvas with optimized clear
+      canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      if (currentLandmarks) {
+        canvasCtx.save();
+        canvasCtx.scale(-1, 1);
+        canvasCtx.translate(-canvas.width, 0);
 
-    if (landmarks.poseLandmarks) {
-      drawingUtils.drawConnectors(
-        landmarks.poseLandmarks[0],
-        HolisticLandmarker.POSE_CONNECTIONS,
-        {
-          color: settings.poseColor,
+        const drawingUtils = new DrawingUtils(canvasCtx);
+
+        // Simplified drawing with fewer style changes
+        if (currentLandmarks.poseLandmarks) {
+          const options = {
+            color: settings.poseColor,
+            lineWidth: 2,
+          };
+          drawingUtils.drawConnectors(
+            currentLandmarks.poseLandmarks[0],
+            HolisticLandmarker.POSE_CONNECTIONS,
+            options
+          );
+          drawingUtils.drawLandmarks(currentLandmarks.poseLandmarks[0], options);
         }
-      );
-      drawingUtils.drawLandmarks(landmarks.poseLandmarks[0], {
-        color: settings.poseColor,
-        lineWidth: 2,
-      });
-    }
-    if (landmarks.leftHandLandmarks) {
-      drawingUtils.drawConnectors(
-        landmarks.leftHandLandmarks[0],
-        HolisticLandmarker.HAND_CONNECTIONS,
-        {
-          color: settings.leftHandColor,
+        
+        if (currentLandmarks.leftHandLandmarks) {
+          const options = {
+            color: settings.leftHandColor,
+            lineWidth: 2,
+          };
+          drawingUtils.drawConnectors(
+            currentLandmarks.leftHandLandmarks[0],
+            HolisticLandmarker.HAND_CONNECTIONS,
+            options
+          );
+          drawingUtils.drawLandmarks(currentLandmarks.leftHandLandmarks[0], options);
         }
-      );
-      drawingUtils.drawLandmarks(landmarks.leftHandLandmarks[0], {
-        color: settings.leftHandColor,
-        lineWidth: 2,
-      });
-    }
-    if (landmarks.rightHandLandmarks) {
-      drawingUtils.drawConnectors(
-        landmarks.rightHandLandmarks[0],
-        HolisticLandmarker.HAND_CONNECTIONS,
-        {
-          color: settings.rightHandColor,
+        
+        if (currentLandmarks.rightHandLandmarks) {
+          const options = {
+            color: settings.rightHandColor,
+            lineWidth: 2,
+          };
+          drawingUtils.drawConnectors(
+            currentLandmarks.rightHandLandmarks[0],
+            HolisticLandmarker.HAND_CONNECTIONS,
+            options
+          );
+          drawingUtils.drawLandmarks(currentLandmarks.rightHandLandmarks[0], options);
         }
-      );
-      drawingUtils.drawLandmarks(landmarks.rightHandLandmarks[0], {
-        color: settings.rightHandColor,
-        lineWidth: 2,
-      });
-    }
-    canvasCtx.restore();
-  }, [landmarks, videoRef, settings]);
+        
+        canvasCtx.restore();
+      }
+      
+      // Schedule next frame
+      animationFrameRef.current = requestAnimationFrame(renderFrame);
+    };
+
+    // Start the animation loop
+    animationFrameRef.current = requestAnimationFrame(renderFrame);
+
+    // Cleanup function
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [videoRef, settings]); // Remove landmarks dependency to prevent re-renders
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white">
@@ -212,7 +244,7 @@ export default function PredictPage() {
               isCapturing={isCapturing}
               isBuffering={isBuffering}
               progress={progress}
-              fps={20}
+              fps={fps}
             />
 
             {/* Settings Panel */}

@@ -15,6 +15,8 @@ interface Settings {
   speechRate: number;
   speechPitch: number;
   autoSpeak: boolean;
+  performanceMode: boolean;
+  frameRateLimit: number;
 }
 
 interface SettingsPanelProps {
@@ -32,6 +34,40 @@ function SettingsPanel({ settings, updateSettings }: SettingsPanelProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Performance Settings */}
+        <div className="space-y-3">
+          <Label className="text-sm font-medium text-slate-300 flex items-center gap-2">
+            <SettingsIcon className="w-4 h-4" />
+            Performance Settings
+          </Label>
+          
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-slate-400">
+              Performance Mode
+            </Label>
+            <Switch
+              checked={settings.performanceMode}
+              onCheckedChange={(checked) =>
+                updateSettings({ performanceMode: checked })
+              }
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label className="text-xs text-slate-400">
+              Frame Rate Limit: {settings.frameRateLimit} FPS
+            </Label>
+            <Slider
+              value={[settings.frameRateLimit]}
+              onValueChange={([value]) => updateSettings({ frameRateLimit: value })}
+              max={30}
+              min={5}
+              step={5}
+              className="w-full"
+            />
+          </div>
+        </div>
+        
         {/* Confidence Threshold */}
         <div className="space-y-2">
           <Label className="text-sm font-medium text-slate-300">

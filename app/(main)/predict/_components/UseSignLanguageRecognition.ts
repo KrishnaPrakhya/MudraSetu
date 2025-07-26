@@ -35,6 +35,8 @@ interface Settings {
   speechRate: number
   speechPitch: number
   autoSpeak: boolean
+  performanceMode: boolean
+  frameRateLimit: number
 }
 
 export function useSignLanguageRecognition() {
@@ -63,6 +65,8 @@ export function useSignLanguageRecognition() {
     speechRate: 1,
     speechPitch: 1,
     autoSpeak: false,
+    performanceMode: true, // Enable performance mode by default
+    frameRateLimit: 15, // Lower frame rate for better performance
   })
 
   // Update stats periodically
@@ -167,7 +171,20 @@ export function useSignLanguageRecognition() {
   }, [aggregatedPredictions, stats])
 
   const updateSettings = useCallback((newSettings: Partial<Settings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }))
+    setSettings((prev) => {
+      const updatedSettings = { ...prev, ...newSettings }
+      
+      // Apply performance settings to MediaPipeClient
+      if (newSettings.performanceMode !== undefined) {
+        mediaPipeClient.setPerformanceMode(newSettings.performanceMode)
+      }
+      
+      if (newSettings.frameRateLimit !== undefined) {
+        mediaPipeClient.setFrameRateLimit(newSettings.frameRateLimit)
+      }
+      
+      return updatedSettings
+    })
   }, [])
 
   const connectSocket = useCallback(() => {
@@ -231,19 +248,44 @@ export function useSignLanguageRecognition() {
     updateStats,
   ])
 
+  // Track FPS for performance monitoring
+  const fpsRef = useRef<number>(0)
+  const frameCountRef = useRef<number>(0)
+  const lastFpsUpdateRef = useRef<number>(0)
+  
   const runDetection = useCallback(async () => {
+    // Calculate FPS every second
+    const now = performance.now()
+    frameCountRef.current++
+    
+    if (now - lastFpsUpdateRef.current >= 1000) {
+      fpsRef.current = Math.round(frameCountRef.current * 1000 / (now - lastFpsUpdateRef.current))
+      frameCountRef.current = 0
+      lastFpsUpdateRef.current = now
+    }
+    
     if (videoRef.current) {
+      // Use the optimized detect method with frame rate limiting
       const landmarkData: LandmarkData | null = mediaPipeClient.detect(videoRef.current)
 
       if (landmarkData) {
+        // Use a function state update to avoid unnecessary re-renders
         setLandmarks(landmarkData.results)
 
+        // Only send data if socket is open and we have keypoints
         if (socketRef.current?.readyState === WebSocket.OPEN) {
           const keypoints = landmarkData.keypoints
-          socketRef.current.send(JSON.stringify(keypoints))
+          // Use a more efficient way to send data
+          try {
+            socketRef.current.send(JSON.stringify(keypoints))
+          } catch (error) {
+            console.error("Error sending keypoints to server:", error)
+          }
         }
       }
     }
+    
+    // Use requestAnimationFrame for smoother performance
     animationFrameId.current = requestAnimationFrame(runDetection)
   }, [])
 
@@ -264,11 +306,16 @@ export function useSignLanguageRecognition() {
       setIsBuffering(false)
       setProgress(0)
       sessionStartTime.current = new Date()
+      
+      // Apply performance settings before starting detection
+      mediaPipeClient.setPerformanceMode(settings.performanceMode)
+      mediaPipeClient.setFrameRateLimit(settings.frameRateLimit)
+      
       await mediaPipeClient.initialize()
       connectSocket()
       runDetection()
     }
-  }, [isCapturing, runDetection, connectSocket])
+  }, [isCapturing, runDetection, connectSocket, settings.performanceMode, settings.frameRateLimit])
 
   useEffect(() => {
     return () => {
@@ -281,6 +328,20 @@ export function useSignLanguageRecognition() {
     }
   }, [])
 
+  // Expose FPS for UI display
+  const [fps, setFps] = useState(0)
+  
+  // Update FPS for UI display
+  useEffect(() => {
+    if (!isCapturing) return
+    
+    const fpsInterval = setInterval(() => {
+      setFps(fpsRef.current)
+    }, 500) // Update FPS display twice per second
+    
+    return () => clearInterval(fpsInterval)
+  }, [isCapturing])
+  
   return {
     videoRef,
     landmarks,
@@ -296,5 +357,6 @@ export function useSignLanguageRecognition() {
     stats,
     settings,
     updateSettings,
+    fps, // Expose actual FPS to components
   }
 }
