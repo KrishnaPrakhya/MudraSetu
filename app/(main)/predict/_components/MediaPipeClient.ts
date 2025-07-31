@@ -28,6 +28,8 @@ class MediaPipeClient {
       )
       
       // Configure options based on performance mode
+      // Note: The "INFO: Created TensorFlow Lite XNNPACK delegate for CPU" message is normal
+      // and indicates that TensorFlow Lite is properly setting up the CPU delegate
       const options = {
         baseOptions: {
           modelAssetPath: `https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task`,
@@ -43,15 +45,20 @@ class MediaPipeClient {
         minDetectionConfidence: this.performanceMode ? 0.3 : 0.5, // Lower confidence threshold in performance mode
       }
       
+      console.log(`Initializing with ${this.performanceMode ? 'CPU' : 'GPU'} delegate and performance mode ${this.performanceMode ? 'enabled' : 'disabled'}`)
+      
+      // The TensorFlow Lite XNNPACK delegate message is expected when using CPU delegate
       this.holisticLandmarker = await HolisticLandmarker.createFromOptions(vision, {
-        ...{
-          ...options,
-          baseOptions: {
-            ...options.baseOptions,
-            delegate: options.baseOptions.delegate as "CPU" | "GPU"
-          }
+        baseOptions: {
+          modelAssetPath: options.baseOptions.modelAssetPath,
+          delegate: options.baseOptions.delegate as "CPU" | "GPU",
+          cpuSettings: options.baseOptions.cpuSettings
         },
-        runningMode: "VIDEO" as const // Explicitly type as RunningMode
+        runningMode: "VIDEO" as const,
+        outputFaceBlendshapes: options.outputFaceBlendshapes,
+        outputFacialTransformationMatrixes: options.outputFacialTransformationMatrixes,
+        minTrackingConfidence: options.minTrackingConfidence,
+        minDetectionConfidence: options.minDetectionConfidence
       })
       this.isInitialized = true
       console.log("MediaPipe client initialized successfully")
@@ -99,8 +106,17 @@ class MediaPipeClient {
   }
   
   // Toggle performance mode
-  setPerformanceMode(enabled: boolean): void {
+  async setPerformanceMode(enabled: boolean): Promise<void> {
+    if (this.performanceMode === enabled) return
+    
     this.performanceMode = enabled
+    console.log(`Performance mode ${enabled ? 'enabled' : 'disabled'}`)
+    
+    // Reinitialize with new settings if already initialized
+    if (this.isInitialized) {
+      this.isInitialized = false
+      await this.initialize()
+    }
   }
   
   // Get current performance mode status

@@ -80,6 +80,14 @@ function PredictionPanel({
                 {isCapturing
                   ? "Waiting for confident prediction..."
                   : "Start capture to begin detection"}
+                
+                {/* Info message about TensorFlow Lite XNNPACK delegate */}
+                {isCapturing && (
+                  <div className="mt-4 text-xs text-cyan-300/70 bg-slate-700/70 p-2 rounded">
+                    <p className="font-semibold">Note:</p>
+                    <p>The message "INFO: Created TensorFlow Lite XNNPACK delegate for CPU" is normal and indicates that the AI engine is properly configured.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>

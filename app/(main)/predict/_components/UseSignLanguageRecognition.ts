@@ -170,21 +170,27 @@ export function useSignLanguageRecognition() {
     URL.revokeObjectURL(url)
   }, [aggregatedPredictions, stats])
 
-  const updateSettings = useCallback((newSettings: Partial<Settings>) => {
+  const updateSettings = useCallback(async (newSettings: Partial<Settings>) => {
     setSettings((prev) => {
       const updatedSettings = { ...prev, ...newSettings }
       
-      // Apply performance settings to MediaPipeClient
-      if (newSettings.performanceMode !== undefined) {
-        mediaPipeClient.setPerformanceMode(newSettings.performanceMode)
-      }
-      
+      // Apply frame rate limit immediately
       if (newSettings.frameRateLimit !== undefined) {
         mediaPipeClient.setFrameRateLimit(newSettings.frameRateLimit)
       }
       
       return updatedSettings
     })
+    
+    // Apply performance mode asynchronously after state update
+    // This needs to be outside the setState callback to handle async properly
+    if (newSettings.performanceMode !== undefined) {
+      try {
+        await mediaPipeClient.setPerformanceMode(newSettings.performanceMode)
+      } catch (error) {
+        console.error("Error updating performance mode:", error)
+      }
+    }
   }, [])
 
   const connectSocket = useCallback(() => {
@@ -301,19 +307,27 @@ export function useSignLanguageRecognition() {
       setLandmarks(null)
       sessionStartTime.current = null
     } else {
-      setIsCapturing(true)
-      setPredictions([])
-      setIsBuffering(false)
-      setProgress(0)
-      sessionStartTime.current = new Date()
-      
-      // Apply performance settings before starting detection
-      mediaPipeClient.setPerformanceMode(settings.performanceMode)
-      mediaPipeClient.setFrameRateLimit(settings.frameRateLimit)
-      
-      await mediaPipeClient.initialize()
-      connectSocket()
-      runDetection()
+      try {
+        setIsCapturing(true)
+        setPredictions([])
+        setIsBuffering(false)
+        setProgress(0)
+        sessionStartTime.current = new Date()
+        
+        // Apply performance settings before starting detection
+        mediaPipeClient.setFrameRateLimit(settings.frameRateLimit)
+        
+        // Apply performance mode and initialize
+        await mediaPipeClient.setPerformanceMode(settings.performanceMode)
+        await mediaPipeClient.initialize()
+        
+        connectSocket()
+        runDetection()
+      } catch (error) {
+        console.error("Error starting capture:", error)
+        setIsCapturing(false)
+        alert("Failed to start detection. Please try again.")
+      }
     }
   }, [isCapturing, runDetection, connectSocket, settings.performanceMode, settings.frameRateLimit])
 
