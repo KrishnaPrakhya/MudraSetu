@@ -18,12 +18,14 @@ import {
   AlertCircle,
   Loader2,
   VideoOff,
+  Settings,
 } from "lucide-react";
 import { useVideoCall } from "./_components/useVideoCall";
 import CallControls from "./_components/CallControls";
 import PredictionDisplay from "./_components/PredictionDisplay";
 import ChatPanel from "./_components/ChatPanel";
 import ParticipantsList from "./_components/ParticipantsList";
+import DeviceSelector from "./_components/DeviceSelector";
 
 export default function VideoCallPage() {
   const {
@@ -64,6 +66,11 @@ export default function VideoCallPage() {
     messages,
     sendMessage,
 
+    // Media devices
+    videoDevices,
+    audioDevices,
+    enumerateDevices,
+
     // Settings
     settings,
     updateSettings,
@@ -73,6 +80,14 @@ export default function VideoCallPage() {
   const [userName, setUserName] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [activeTab, setActiveTab] = useState("call");
+  
+  const handleVideoDeviceChange = (deviceId: string) => {
+    updateSettings({ selectedVideoDeviceId: deviceId });
+  };
+
+  const handleAudioDeviceChange = (deviceId: string) => {
+    updateSettings({ selectedAudioDeviceId: deviceId });
+  };
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -476,10 +491,11 @@ export default function VideoCallPage() {
             onValueChange={setActiveTab}
             className="h-full flex flex-col"
           >
-            <TabsList className="grid w-full grid-cols-3 bg-slate-800/50 m-2">
+            <TabsList className="grid w-full grid-cols-4 bg-slate-800/50 m-2">
               <TabsTrigger value="call">Call</TabsTrigger>
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="settings">Settings</TabsTrigger>
+              <TabsTrigger value="devices">Devices</TabsTrigger>
             </TabsList>
 
             <div className="flex-1 overflow-hidden">
@@ -498,6 +514,16 @@ export default function VideoCallPage() {
                     Settings panel - customize your call experience
                   </div>
                 </div>
+              </TabsContent>
+              <TabsContent value="devices" className="h-full m-0 p-4">
+                <DeviceSelector
+                  videoDevices={videoDevices}
+                  audioDevices={audioDevices}
+                  selectedVideoDeviceId={settings.selectedVideoDeviceId}
+                  selectedAudioDeviceId={settings.selectedAudioDeviceId}
+                  onVideoDeviceChange={handleVideoDeviceChange}
+                  onAudioDeviceChange={handleAudioDeviceChange}
+                />
               </TabsContent>
             </div>
           </Tabs>

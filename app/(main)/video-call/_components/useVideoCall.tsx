@@ -40,6 +40,8 @@ interface CallSettings {
   videoEnabled: boolean;
   predictionEnabled: boolean;
   autoSpeak: boolean;
+  selectedVideoDeviceId: string;
+  selectedAudioDeviceId: string;
 }
 
 export function useVideoCall() {
@@ -78,7 +80,13 @@ export function useVideoCall() {
     videoEnabled: true,
     predictionEnabled: true,
     autoSpeak: false,
+    selectedVideoDeviceId: "",
+    selectedAudioDeviceId: "",
   });
+
+  // Available media devices
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
 
   // Refs
   const socketRef = useRef<WebSocket | null>(null);
@@ -105,18 +113,73 @@ export function useVideoCall() {
    * 4. If everything fails we simply return `null` so that the caller can still
    *    proceed without local media (e.g. for testing on a single machine).
    */
+  // Enumerate available media devices
+  const enumerateDevices = useCallback(async () => {
+    try {
+      // Request permission first by getting a temporary stream
+      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      
+      // Get all devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      
+      // Filter video and audio input devices
+      const videoInputs = devices.filter(device => device.kind === "videoinput");
+      const audioInputs = devices.filter(device => device.kind === "audioinput");
+      
+      console.log("Available video devices:", videoInputs);
+      console.log("Available audio devices:", audioInputs);
+      
+      setVideoDevices(videoInputs);
+      setAudioDevices(audioInputs);
+      
+      // Stop the temporary stream
+      tempStream.getTracks().forEach(track => track.stop());
+      
+      // Set default devices if not already set
+      if (!settings.selectedVideoDeviceId && videoInputs.length > 0) {
+        setSettings(prev => ({
+          ...prev,
+          selectedVideoDeviceId: videoInputs[0].deviceId
+        }));
+      }
+      
+      if (!settings.selectedAudioDeviceId && audioInputs.length > 0) {
+        setSettings(prev => ({
+          ...prev,
+          selectedAudioDeviceId: audioInputs[0].deviceId
+        }));
+      }
+    } catch (error) {
+      console.error("Error enumerating devices:", error);
+    }
+  }, [settings.selectedVideoDeviceId, settings.selectedAudioDeviceId]);
+
+  // Initialize media stream with selected devices
   const initializeMedia = useCallback(async (): Promise<MediaStream | null> => {
-    const constraintsVariants: MediaStreamConstraints[] = [
-      {
-        video: {
+    // First enumerate devices if we haven't already
+    if (videoDevices.length === 0 || audioDevices.length === 0) {
+      await enumerateDevices();
+    }
+    
+    const videoConstraints = settings.selectedVideoDeviceId
+      ? { deviceId: { exact: settings.selectedVideoDeviceId } }
+      : {
           width: { ideal: 1280 },
           height: { ideal: 720 },
           facingMode: "user",
-        },
-        audio: true,
+        };
+    
+    const audioConstraints = settings.selectedAudioDeviceId
+      ? { deviceId: { exact: settings.selectedAudioDeviceId } }
+      : true;
+    
+    const constraintsVariants: MediaStreamConstraints[] = [
+      {
+        video: videoConstraints,
+        audio: audioConstraints,
       },
-      { video: true, audio: false },
-      { video: false, audio: true },
+      { video: videoConstraints, audio: false },
+      { video: false, audio: audioConstraints },
     ];
 
     for (const constraints of constraintsVariants) {
@@ -152,7 +215,7 @@ export function useVideoCall() {
     console.error("Unable to obtain local media stream (camera/microphone)");
     // We do **not** throw here so that the calling flow can still continue
     return null;
-  }, []);
+  }, [videoDevices, audioDevices, settings.selectedVideoDeviceId, settings.selectedAudioDeviceId, enumerateDevices]);
 
   // WebRTC peer connection management
   const createPeerConnection = useCallback(
@@ -914,10 +977,58 @@ export function useVideoCall() {
     }
   }, []);
 
-  // Settings
+  // Update settings
   const updateSettings = useCallback((newSettings: Partial<CallSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
-  }, []);
+    
+    // If device selection changed, restart the media stream
+    if (
+      (newSettings.selectedVideoDeviceId && newSettings.selectedVideoDeviceId !== settings.selectedVideoDeviceId) ||
+      (newSettings.selectedAudioDeviceId && newSettings.selectedAudioDeviceId !== settings.selectedAudioDeviceId)
+    ) {
+      // Stop current tracks
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      
+      // Reinitialize with new device selection
+      initializeMedia().then(stream => {
+        if (stream && isInCall) {
+          // Update all peer connections with the new stream
+          Object.values(peerConnectionsRef.current).forEach(pc => {
+            // Remove all existing tracks
+            const senders = pc.getSenders();
+            senders.forEach(sender => {
+              pc.removeTrack(sender);
+            });
+            
+            // Add new tracks
+            stream.getTracks().forEach(track => {
+              pc.addTrack(track, stream);
+            });
+          });
+        }
+      });
+    }
+  }, [settings.selectedVideoDeviceId, settings.selectedAudioDeviceId, localStream, isInCall, initializeMedia]);
+
+  // Call enumerateDevices on component mount and when devices change
+  useEffect(() => {
+    // Initial enumeration
+    enumerateDevices();
+    
+    // Listen for device changes
+    const handleDeviceChange = () => {
+      console.log("Media devices changed, re-enumerating...");
+      enumerateDevices();
+    };
+    
+    navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
+    
+    return () => {
+      navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
+    };
+  }, [enumerateDevices]);
 
   // Attach local tracks to any existing peer connections once we finally get a
   // MediaStream (this can happen asynchronously when the first attempt failed
@@ -954,6 +1065,18 @@ export function useVideoCall() {
       stopPredictionLoop();
     };
   }, [isInCall, localStream, startPredictionLoop, stopPredictionLoop]);
+
+  // Load available devices when component mounts
+  useEffect(() => {
+    enumerateDevices();
+    
+    // Set up device change listener
+    navigator.mediaDevices.addEventListener('devicechange', enumerateDevices);
+    
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', enumerateDevices);
+    };
+  }, [enumerateDevices]);
 
   // Set up local video stream
   useEffect(() => {
@@ -1030,6 +1153,11 @@ export function useVideoCall() {
     // Chat
     messages,
     sendMessage,
+
+    // Media devices
+    videoDevices,
+    audioDevices,
+    enumerateDevices,
 
     // Settings
     settings,
